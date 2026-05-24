@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Live Currency Rates</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --card: #1a1d27;
+    --card2: #222636;
+    --accent: #6c8aff;
+    --accent2: #a78bfa;
+    --green: #34d399;
+    --red: #f87171;
+    --text: #e2e8f0;
+    --sub: #94a3b8;
+    --border: #2e3347;
+    --radius: 16px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: -apple-system, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding-bottom: 20px;
+  }
+
+  /* HEADER */
+  .header {
+    background: linear-gradient(135deg, #1e2240 0%, #151829 100%);
+    padding: 20px 20px 16px;
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 100;
+  }
+  .header-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .app-title { font-size: 20px; font-weight: 700; letter-spacing: 0.3px; }
+  .app-title span { background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .refresh-btn {
+    background: var(--card2); border: 1px solid var(--border);
+    color: var(--text); border-radius: 12px; padding: 8px 14px;
+    font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 6px;
+    transition: all 0.2s;
+  }
+  .refresh-btn:active { transform: scale(0.96); background: var(--accent); border-color: var(--accent); }
+  .refresh-btn svg { transition: transform 0.6s; }
+  .refresh-btn.spinning svg { animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* BASE CURRENCY SELECTOR */
+  .base-row { display: flex; align-items: center; gap: 10px; }
+  .base-label { font-size: 12px; color: var(--sub); white-space: nowrap; }
+  .base-select {
+    flex: 1; background: var(--card2); border: 1px solid var(--border);
+    color: var(--text); border-radius: 10px; padding: 8px 12px;
+    font-size: 14px; font-weight: 600; appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2394a3b8' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 12px center;
+    padding-right: 30px;
+  }
+  .amount-input {
+    flex: 1; background: var(--card2); border: 1px solid var(--border);
+    color: var(--text); border-radius: 10px; padding: 8px 12px;
+    font-size: 15px; font-weight: 600; max-width: 130px;
+  }
+  .amount-input:focus { outline: none; border-color: var(--accent); }
+  .last-update { font-size: 11px; color: var(--sub); margin-top: 10px; text-align: center; }
+  .last-update .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--green); margin-right: 5px; }
+  .last-update .dot.stale { background: #f59e0b; }
+
+  /* STATUS */
+  .status-bar {
+    margin: 12px 16px; padding: 10px 14px; border-radius: 10px;
+    font-size: 13px; display: none;
+  }
+  .status-bar.error { background: #2d1515; border: 1px solid #7f1d1d; color: var(--red); display: block; }
+  .status-bar.loading { background: #1a1f35; border: 1px solid var(--border); color: var(--sub); display: block; }
+
+  /* RATES GRID */
+  .section-title {
+    font-size: 12px; color: var(--sub); letter-spacing: 0.8px;
+    text-transform: uppercase; padding: 16px 20px 8px;
+  }
+  .rates-list { padding: 0 16px; display: flex; flex-direction: column; gap: 8px; }
+  .rate-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px 16px;
+    display: flex; align-items: center; gap: 12px;
+    position: relative; overflow: hidden;
+    transition: border-color 0.2s;
+  }
+  .rate-card.updated { animation: flashUpdate 0.8s ease; }
+  @keyframes flashUpdate {
+    0%, 100% { border-color: var(--border); }
+    50% { border-color: var(--accent); background: #1e2340; }
+  }
+  .flag { font-size: 28px; line-height: 1; flex-shrink: 0; width: 36px; text-align: center; }
+  .currency-info { flex: 1; min-width: 0; }
+  .currency-code { font-size: 15px; font-weight: 700; letter-spacing: 0.5px; }
+  .currency-name { font-size: 12px; color: var(--sub); margin-top: 1px; }
+  .rate-values { text-align: right; flex-shrink: 0; }
+  .rate-main { font-size: 17px; font-weight: 700; letter-spacing: -0.3px; }
+  .rate-converted { font-size: 12px; color: var(--sub); margin-top: 2px; }
+  .remove-btn {
+    position: absolute; top: 8px; right: 8px;
+    background: none; border: none; color: #475569; cursor: pointer;
+    font-size: 16px; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center;
+    border-radius: 50%; transition: all 0.2s; opacity: 0;
+    line-height: 1;
+  }
+  .rate-card:hover .remove-btn,
+  .rate-card:active .remove-btn { opacity: 1; }
+  .show-remove .remove-btn { opacity: 1; }
+
+  /* ADD CURRENCY */
+  .add-section { padding: 16px 16px 0; }
+  .add-btn {
+    width: 100%; background: var(--card); border: 2px dashed var(--border);
+    color: var(--sub); border-radius: var(--radius); padding: 14px;
+    font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+    transition: all 0.2s;
+  }
+  .add-btn:active { border-color: var(--accent); color: var(--accent); background: #1a1f35; }
+
+  /* MODAL */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+    z-index: 200; display: none; align-items: flex-end; justify-content: center;
+  }
+  .modal-overlay.open { display: flex; animation: slideUp 0.25s ease; }
+  @keyframes slideUp { from { opacity: 0; transform: translateY(30px); } }
+  .modal {
+    background: var(--card); border-radius: 20px 20px 0 0;
+    padding: 20px; width: 100%; max-height: 70vh;
+    display: flex; flex-direction: column;
+  }
+  .modal-handle { width: 40px; height: 4px; background: var(--border); border-radius: 2px; margin: 0 auto 16px; }
+  .modal-title { font-size: 17px; font-weight: 700; margin-bottom: 14px; }
+  .search-input {
+    background: var(--card2); border: 1px solid var(--border);
+    color: var(--text); border-radius: 10px; padding: 10px 14px;
+    font-size: 15px; width: 100%; margin-bottom: 12px;
+  }
+  .search-input:focus { outline: none; border-color: var(--accent); }
+  .currency-list { overflow-y: auto; flex: 1; }
+  .currency-option {
+    display: flex; align-items: center; gap: 12px; padding: 12px 4px;
+    cursor: pointer; border-bottom: 1px solid var(--border);
+    transition: background 0.1s;
+  }
+  .currency-option:active { background: var(--card2); border-radius: 8px; }
+  .currency-option.disabled { opacity: 0.35; pointer-events: none; }
+  .opt-flag { font-size: 24px; width: 32px; text-align: center; }
+  .opt-code { font-weight: 700; font-size: 14px; min-width: 44px; }
+  .opt-name { font-size: 13px; color: var(--sub); }
+
+  /* CONVERTER */
+  .converter-section {
+    margin: 12px 16px 0; background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px; display: none;
+  }
+  .converter-section.visible { display: block; }
+  .conv-title { font-size: 12px; color: var(--sub); letter-spacing: 0.8px; text-transform: uppercase; margin-bottom: 12px; }
+  .conv-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .conv-row select, .conv-row input {
+    background: var(--card2); border: 1px solid var(--border);
+    color: var(--text); border-radius: 10px; padding: 9px 12px;
+    font-size: 14px; font-weight: 600;
+  }
+  .conv-row input { flex: 1; }
+  .conv-row input:focus, .conv-row select:focus { outline: none; border-color: var(--accent); }
+  .conv-result {
+    text-align: center; font-size: 22px; font-weight: 700; padding: 10px;
+    background: var(--card2); border-radius: 10px; color: var(--accent);
+  }
+  .conv-result small { font-size: 13px; color: var(--sub); font-weight: 400; display: block; margin-top: 2px; }
+
+  /* LONG PRESS HINT */
+  .hint { font-size: 11px; color: #3d4561; text-align: center; padding: 8px 20px 0; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-top">
+    <div class="app-title">💱 <span>LiveRates</span></div>
+    <button class="refresh-btn" id="refreshBtn" onclick="fetchRates()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+        <path d="M21 3v5h-5"/>
+        <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+        <path d="M8 16H3v5"/>
+      </svg>
+      Refresh
+    </button>
+  </div>
+  <div class="base-row">
+    <span class="base-label">Base:</span>
+    <select class="base-select" id="baseCurrency" onchange="onBaseChange()"></select>
+    <input class="amount-input" type="number" id="baseAmount" value="1" min="0" step="any" oninput="updateDisplay()">
+  </div>
+  <div class="last-update" id="lastUpdate">Tap Refresh to load rates</div>
+</div>
+
+<div class="status-bar" id="statusBar"></div>
+
+<!-- Converter -->
+<div class="converter-section" id="converterSection">
+  <div class="conv-title">⚡ Quick Converter</div>
+  <div class="conv-row">
+    <input type="number" id="convAmount" value="100" step="any" oninput="updateConverter()">
+    <select id="convFrom" onchange="updateConverter()"></select>
+    <span style="color:var(--sub)">→</span>
+    <select id="convTo" onchange="updateConverter()"></select>
+  </div>
+  <div class="conv-result" id="convResult">—</div>
+</div>
+
+<div class="section-title" id="ratesTitle">YOUR CURRENCIES</div>
+<div class="rates-list" id="ratesList"></div>
+
+<div class="add-section">
+  <button class="add-btn" onclick="openModal()" id="addBtn">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+      <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+    </svg>
+    Add Currency (up to 10)
+  </button>
+</div>
+<div class="hint" id="holdHint">Long-press a card to remove it</div>
+
+<!-- Add Currency Modal -->
+<div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Add Currency</div>
+    <input class="search-input" type="text" id="searchInput" placeholder="Search currency..." oninput="filterCurrencies()">
+    <div class="currency-list" id="currencyList"></div>
+  </div>
+</div>
+
+<script>
+// ─── ALL CURRENCIES ───────────────────────────────────────────────────────────
+const ALL_CURRENCIES = {
+  USD: { name: "US Dollar",         flag: "🇺🇸" },
+  EUR: { name: "Euro",              flag: "🇪🇺" },
+  GBP: { name: "British Pound",     flag: "🇬🇧" },
+  INR: { name: "Indian Rupee",      flag: "🇮🇳" },
+  JPY: { name: "Japanese Yen",      flag: "🇯🇵" },
+  AUD: { name: "Australian Dollar", flag: "🇦🇺" },
+  CAD: { name: "Canadian Dollar",   flag: "🇨🇦" },
+  CHF: { name: "Swiss Franc",       flag: "🇨🇭" },
+  CNY: { name: "Chinese Yuan",      flag: "🇨🇳" },
+  SGD: { name: "Singapore Dollar",  flag: "🇸🇬" },
+  HKD: { name: "Hong Kong Dollar",  flag: "🇭🇰" },
+  NZD: { name: "New Zealand Dollar",flag: "🇳🇿" },
+  SEK: { name: "Swedish Krona",     flag: "🇸🇪" },
+  NOK: { name: "Norwegian Krone",   flag: "🇳🇴" },
+  DKK: { name: "Danish Krone",      flag: "🇩🇰" },
+  MXN: { name: "Mexican Peso",      flag: "🇲🇽" },
+  BRL: { name: "Brazilian Real",    flag: "🇧🇷" },
+  ZAR: { name: "South African Rand",flag: "🇿🇦" },
+  AED: { name: "UAE Dirham",        flag: "🇦🇪" },
+  SAR: { name: "Saudi Riyal",       flag: "🇸🇦" },
+  KRW: { name: "South Korean Won",  flag: "🇰🇷" },
+  THB: { name: "Thai Baht",         flag: "🇹🇭" },
+  MYR: { name: "Malaysian Ringgit", flag: "🇲🇾" },
+  IDR: { name: "Indonesian Rupiah", flag: "🇮🇩" },
+  PHP: { name: "Philippine Peso",   flag: "🇵🇭" },
+  PLN: { name: "Polish Zloty",      flag: "🇵🇱" },
+  CZK: { name: "Czech Koruna",      flag: "🇨🇿" },
+  HUF: { name: "Hungarian Forint",  flag: "🇭🇺" },
+  TRY: { name: "Turkish Lira",      flag: "🇹🇷" },
+  ILS: { name: "Israeli Shekel",    flag: "🇮🇱" },
+};
+
+// ─── STATE ────────────────────────────────────────────────────────────────────
+let rates = {};           // { USD: 1.08, GBP: 0.85, ... } relative to base
+let baseCurrency = "USD";
+let selectedCurrencies = ["EUR","GBP","INR","JPY","AUD","CAD"];
+let lastFetch = null;
+let fetchError = false;
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+function init() {
+  loadState();
+  buildBaseSelect();
+  buildConverterSelects();
+  renderList();
+  fetchRates();
+}
+
+function loadState() {
+  try {
+    const s = localStorage.getItem("currencyState");
+    if (s) {
+      const parsed = JSON.parse(s);
+      baseCurrency = parsed.base || "USD";
+      selectedCurrencies = (parsed.selected || ["EUR","GBP","INR","JPY","AUD","CAD"]).slice(0,10);
+    }
+  } catch(e) {}
+}
+
+function saveState() {
+  try {
+    localStorage.setItem("currencyState", JSON.stringify({ base: baseCurrency, selected: selectedCurrencies }));
+  } catch(e) {}
+}
+
+// ─── BUILD SELECTS ────────────────────────────────────────────────────────────
+function buildBaseSelect() {
+  const sel = document.getElementById("baseCurrency");
+  sel.innerHTML = "";
+  for (const [code, info] of Object.entries(ALL_CURRENCIES)) {
+    const opt = document.createElement("option");
+    opt.value = code;
+    opt.textContent = `${info.flag} ${code} – ${info.name}`;
+    if (code === baseCurrency) opt.selected = true;
+    sel.appendChild(opt);
+  }
+}
+
+function buildConverterSelects() {
+  ["convFrom","convTo"].forEach((id, i) => {
+    const sel = document.getElementById(id);
+    sel.innerHTML = "";
+    for (const [code, info] of Object.entries(ALL_CURRENCIES)) {
+      const opt = document.createElement("option");
+      opt.value = code;
+      opt.textContent = `${info.flag} ${code}`;
+      sel.appendChild(opt);
+    }
+    sel.value = i === 0 ? "USD" : "EUR";
+  });
+  updateConverter();
+}
+
+// ─── FETCH RATES ──────────────────────────────────────────────────────────────
+async function fetchRates() {
+  const btn = document.getElementById("refreshBtn");
+  btn.classList.add("spinning");
+  showStatus("Fetching live rates…", "loading");
+
+  // Build the set of currencies we need (base + all selected)
+  const needed = new Set([baseCurrency, ...selectedCurrencies,
+    document.getElementById("convFrom").value,
+    document.getElementById("convTo").value]);
+  const quotes = [...needed].filter(c => c !== baseCurrency).join(",");
+
+  const url = `https://api.frankfurter.dev/v2/rates?base=${baseCurrency}&quotes=${quotes}`;
+
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    rates = { [baseCurrency]: 1, ...data.rates };
+    lastFetch = new Date();
+    fetchError = false;
+    hideStatus();
+    updateLastUpdate();
+    updateDisplay();
+    document.getElementById("converterSection").classList.add("visible");
+    updateConverter();
+  } catch(err) {
+    fetchError = true;
+    showStatus(`⚠ Could not fetch rates: ${err.message}. Check internet connection.`, "error");
+    updateLastUpdate();
+    if (Object.keys(rates).length === 0) {
+      document.getElementById("ratesTitle").textContent = "NO DATA – CONNECT & REFRESH";
+    }
+  } finally {
+    btn.classList.remove("spinning");
+  }
+}
+
+function updateLastUpdate() {
+  const el = document.getElementById("lastUpdate");
+  if (!lastFetch) { el.innerHTML = `Tap Refresh to load rates`; return; }
+  const mins = Math.floor((Date.now() - lastFetch) / 60000);
+  const timeStr = lastFetch.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
+  const stale = mins > 60;
+  el.innerHTML = `<span class="dot${stale?" stale":""}"></span>Rates as of ${timeStr}${mins > 0 ? ` (${mins}m ago)` : ""}`;
+}
+
+// ─── DISPLAY ──────────────────────────────────────────────────────────────────
+function updateDisplay() {
+  const amount = parseFloat(document.getElementById("baseAmount").value) || 1;
+  document.querySelectorAll(".rate-card").forEach(card => {
+    const code = card.dataset.code;
+    const rate = rates[code];
+    if (rate === undefined) return;
+    const converted = amount * rate;
+    card.querySelector(".rate-main").textContent = formatRate(rate);
+    card.querySelector(".rate-converted").textContent =
+      `${amount} ${baseCurrency} = ${formatMoney(converted)} ${code}`;
+  });
+  updateConverter();
+}
+
+function formatRate(r) {
+  if (r >= 1000) return r.toLocaleString("en-US", {maximumFractionDigits: 2});
+  if (r >= 100)  return r.toFixed(2);
+  if (r >= 1)    return r.toFixed(4);
+  return r.toFixed(6);
+}
+
+function formatMoney(r) {
+  if (r >= 1000) return r.toLocaleString("en-US", {maximumFractionDigits: 0});
+  if (r >= 10)   return r.toFixed(2);
+  return r.toFixed(4);
+}
+
+// ─── RENDER LIST ─────────────────────────────────────────────────────────────
+function renderList() {
+  const list = document.getElementById("ratesList");
+  list.innerHTML = "";
+  const amount = parseFloat(document.getElementById("baseAmount").value) || 1;
+
+  selectedCurrencies.forEach(code => {
+    const info = ALL_CURRENCIES[code];
+    if (!info) return;
+    const rate = rates[code];
+    const converted = rate ? amount * rate : null;
+
+    const card = document.createElement("div");
+    card.className = "rate-card";
+    card.dataset.code = code;
+    card.innerHTML = `
+      <div class="flag">${info.flag}</div>
+      <div class="currency-info">
+        <div class="currency-code">${code}</div>
+        <div class="currency-name">${info.name}</div>
+      </div>
+      <div class="rate-values">
+        <div class="rate-main">${rate ? formatRate(rate) : "—"}</div>
+        <div class="rate-converted">${converted ? `${amount} ${baseCurrency} = ${formatMoney(converted)} ${code}` : "No data"}</div>
+      </div>
+      <button class="remove-btn" onclick="removeCurrency('${code}')" title="Remove">×</button>
+    `;
+
+    // Long press to show remove
+    let pressTimer;
+    card.addEventListener("touchstart", () => {
+      pressTimer = setTimeout(() => card.classList.toggle("show-remove"), 600);
+    }, {passive:true});
+    card.addEventListener("touchend", () => clearTimeout(pressTimer), {passive:true});
+
+    list.appendChild(card);
+  });
+
+  // Update add button state
+  const addBtn = document.getElementById("addBtn");
+  addBtn.disabled = selectedCurrencies.length >= 10;
+  addBtn.style.opacity = selectedCurrencies.length >= 10 ? "0.4" : "1";
+  addBtn.querySelector("span") && (addBtn.innerHTML = addBtn.innerHTML);
+  document.getElementById("ratesTitle").textContent =
+    `YOUR CURRENCIES (${selectedCurrencies.length}/10)`;
+}
+
+// ─── MANAGE CURRENCIES ───────────────────────────────────────────────────────
+function addCurrency(code) {
+  if (selectedCurrencies.includes(code) || selectedCurrencies.length >= 10) return;
+  selectedCurrencies.push(code);
+  saveState();
+  closeModal();
+  renderList();
+  if (Object.keys(rates).length > 0) fetchRates();
+}
+
+function removeCurrency(code) {
+  selectedCurrencies = selectedCurrencies.filter(c => c !== code);
+  saveState();
+  renderList();
+}
+
+// ─── BASE CHANGE ─────────────────────────────────────────────────────────────
+function onBaseChange() {
+  baseCurrency = document.getElementById("baseCurrency").value;
+  rates = {};
+  saveState();
+  renderList();
+  fetchRates();
+}
+
+// ─── CONVERTER ───────────────────────────────────────────────────────────────
+function updateConverter() {
+  const amount = parseFloat(document.getElementById("convAmount").value) || 0;
+  const from = document.getElementById("convFrom").value;
+  const to = document.getElementById("convTo").value;
+
+  if (!rates[from] || !rates[to]) {
+    document.getElementById("convResult").innerHTML = `— <small>Fetch rates first</small>`;
+    return;
+  }
+  // Convert via base: amount in FROM → base → TO
+  const inBase = from === baseCurrency ? amount : amount / rates[from];
+  const result = to === baseCurrency ? inBase : inBase * rates[to];
+
+  const f = ALL_CURRENCIES[from]?.flag || "";
+  const t = ALL_CURRENCIES[to]?.flag || "";
+  document.getElementById("convResult").innerHTML =
+    `${f} ${amount.toLocaleString()} ${from} = ${t} <strong>${formatMoney(result)}</strong> ${to}
+     <small>Rate: 1 ${from} = ${formatRate(rates[to]/rates[from])} ${to}</small>`;
+}
+
+// ─── MODAL ────────────────────────────────────────────────────────────────────
+function openModal() {
+  document.getElementById("modalOverlay").classList.add("open");
+  document.getElementById("searchInput").value = "";
+  filterCurrencies();
+  setTimeout(() => document.getElementById("searchInput").focus(), 200);
+}
+
+function closeModal(e) {
+  if (!e || e.target === document.getElementById("modalOverlay")) {
+    document.getElementById("modalOverlay").classList.remove("open");
+  }
+}
+
+function filterCurrencies() {
+  const q = document.getElementById("searchInput").value.toLowerCase();
+  const list = document.getElementById("currencyList");
+  list.innerHTML = "";
+
+  for (const [code, info] of Object.entries(ALL_CURRENCIES)) {
+    if (code === baseCurrency) continue;
+    if (q && !code.toLowerCase().includes(q) && !info.name.toLowerCase().includes(q)) continue;
+    const isAdded = selectedCurrencies.includes(code);
+    const div = document.createElement("div");
+    div.className = `currency-option${isAdded ? " disabled" : ""}`;
+    div.innerHTML = `
+      <span class="opt-flag">${info.flag}</span>
+      <span class="opt-code">${code}</span>
+      <span class="opt-name">${info.name}</span>
+      ${isAdded ? '<span style="margin-left:auto;color:var(--green);font-size:13px">✓ Added</span>' : ''}
+    `;
+    if (!isAdded) div.onclick = () => addCurrency(code);
+    list.appendChild(div);
+  }
+}
+
+// ─── STATUS ───────────────────────────────────────────────────────────────────
+function showStatus(msg, type) {
+  const el = document.getElementById("statusBar");
+  el.textContent = msg; el.className = `status-bar ${type}`;
+}
+function hideStatus() {
+  document.getElementById("statusBar").className = "status-bar";
+}
+
+// ─── AUTO REFRESH ─────────────────────────────────────────────────────────────
+setInterval(() => {
+  if (lastFetch) updateLastUpdate();
+  // Auto-refresh every 5 minutes if app is visible
+  if (lastFetch && !document.hidden && (Date.now() - lastFetch > 5 * 60 * 1000)) {
+    fetchRates();
+  }
+}, 30000);
+
+init();
+</script>
+</body>
+</html>
