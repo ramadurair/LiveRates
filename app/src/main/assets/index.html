@@ -340,45 +340,60 @@ function buildConverterSelects() {
 async function fetchRates() {
   const btn = document.getElementById("refreshBtn");
   btn.classList.add("spinning");
-  showStatus("Fetching live rates…", "loading");
 
   const needed = new Set([baseCurrency, ...selectedCurrencies,
     document.getElementById("convFrom").value,
     document.getElementById("convTo").value]);
   const symbols = [...needed].filter(c => c !== baseCurrency).join(",");
-
-  // frankfurter.app v1 — returns { rates: { EUR: 0.92, ... } }
   const url = "https://api.frankfurter.app/latest?base=" + baseCurrency + "&symbols=" + symbols;
 
-  try {
-    showStatus("Fetching from frankfurter.app…", "loading");
-    const res = await fetch(url, {
-      method: "GET",
-      headers: { "Accept": "application/json" },
-      signal: AbortSignal.timeout(15000)
-    });
-    const text = await res.text();
-    if (!res.ok) throw new Error("HTTP " + res.status + ": " + text.slice(0, 120));
-    let data;
-    try { data = JSON.parse(text); } catch(e) { throw new Error("Bad JSON: " + text.slice(0, 120)); }
-    if (!data.rates) throw new Error("No rates field. Response: " + text.slice(0, 120));
+  showStatus("⏳ Connecting…", "loading");
 
-    rates = Object.assign({ [baseCurrency]: 1 }, data.rates);
-    lastFetch = new Date();
-    fetchError = false;
-    hideStatus();
+  // Use XMLHttpRequest — more reliable in Android WebView than fetch()
+  const result = await new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.timeout = 15000;
+    xhr.open("GET", url, true);
+    xhr.setRequestHeader("Accept", "application/json");
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(xhr.responseText);
+      } else {
+        reject(new Error("HTTP " + xhr.status + ": " + xhr.responseText.slice(0, 100)));
+      }
+    };
+    xhr.onerror = () => reject(new Error("Network error — check internet connection"));
+    xhr.ontimeout = () => reject(new Error("Request timed out after 15s"));
+    xhr.onprogress = () => showStatus("⬇ Receiving data…", "loading");
+    xhr.send();
+  }).catch(e => { return { error: e.message }; });
+
+  btn.classList.remove("spinning");
+
+  if (result && result.error) {
+    showStatus("ERROR: " + result.error, "error");
     updateLastUpdate();
-    renderList();
-    updateDisplay();
-    document.getElementById("converterSection").classList.add("visible");
-    updateConverter();
-  } catch(err) {
-    fetchError = true;
-    showStatus("ERROR: " + err.message, "error");
-    updateLastUpdate();
-  } finally {
-    btn.classList.remove("spinning");
+    return;
   }
+
+  let data;
+  try { data = JSON.parse(result); }
+  catch(e) { showStatus("ERROR: Bad response — " + String(result).slice(0, 100), "error"); return; }
+
+  if (!data.rates) {
+    showStatus("ERROR: No rates in response — " + String(result).slice(0, 100), "error");
+    return;
+  }
+
+  rates = Object.assign({ [baseCurrency]: 1 }, data.rates);
+  lastFetch = new Date();
+  fetchError = false;
+  hideStatus();
+  updateLastUpdate();
+  renderList();
+  updateDisplay();
+  document.getElementById("converterSection").classList.add("visible");
+  updateConverter();
 }
 
 function updateLastUpdate() {
